@@ -21,6 +21,7 @@ Usage:
 import argparse
 import glob
 import os
+import socket
 import sys
 import tempfile
 import time
@@ -335,6 +336,18 @@ def prepare_for_visualization(predictions, images=None):
     return vis_predictions
 
 
+def get_lan_urls(port: int):
+    """Return likely LAN URLs for the local viewer."""
+    urls = []
+    try:
+        for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
+            if ip and not ip.startswith("127."):
+                urls.append(f"http://{ip}:{port}")
+    except OSError:
+        pass
+    return sorted(set(urls))
+
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -402,6 +415,8 @@ def main():
                              "actual frames.  Recommended when --keyframe_interval > 1.")
 
     # Visualization
+    parser.add_argument("--host", type=str, default="0.0.0.0",
+                        help="Viewer bind address. Use 0.0.0.0 for LAN access, or a specific local IP.")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--conf_threshold", type=float, default=1.5)
     parser.add_argument("--downsample_factor", type=int, default=10)
@@ -585,6 +600,7 @@ def main():
         from lingbot_map.vis import PointCloudViewer
         viewer = PointCloudViewer(
             pred_dict=prepare_for_visualization(predictions, images_cpu),
+            host=args.host,
             port=args.port,
             vis_threshold=args.conf_threshold,
             downsample_factor=args.downsample_factor,
@@ -594,7 +610,15 @@ def main():
             sky_mask_dir=args.sky_mask_dir,
             sky_mask_visualization_dir=args.sky_mask_visualization_dir,
         )
-        print(f"3D viewer at http://localhost:{args.port}")
+        print(f"3D viewer local: http://127.0.0.1:{args.port}")
+        if args.host == "0.0.0.0":
+            lan_urls = get_lan_urls(args.port)
+            if lan_urls:
+                print("3D viewer LAN URLs:")
+                for url in lan_urls:
+                    print(f"  {url}")
+        elif not args.host.startswith("127."):
+            print(f"3D viewer bound URL: http://{args.host}:{args.port}")
         viewer.run()
     except ImportError:
         print("viser not installed. Install with: pip install lingbot-map[vis]")

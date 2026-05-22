@@ -78,6 +78,7 @@ class PointCloudViewer:
         image_mask=None,
         edge_color_list=None,
         device: str = "cpu",
+        host: str = "0.0.0.0",
         port: int = 8080,
         show_camera: bool = True,
         vis_threshold: float = 1.0,
@@ -96,11 +97,12 @@ class PointCloudViewer:
         self.model = model
         self.size = size
         self.state_args = state_args
-        self.server = viser.ViserServer(host="0.0.0.0", port=port)
+        self.server = viser.ViserServer(host=host, port=port)
         self.server.gui.configure_theme(titlebar_content=None, control_layout="collapsible")
         self.device = device
         self.conf_list = conf_list
         self.vis_threshold = vis_threshold
+        self.downsample_factor = downsample_factor
         self.point_size = point_size
         self.tt = lambda x: torch.from_numpy(x).float().to(device)
 
@@ -409,13 +411,13 @@ class PointCloudViewer:
             "Camera Size", min=0.01, max=0.5, step=0.01, initial_value=0.1
         )
         self.downsample_slider = self.server.gui.add_slider(
-            "Downsample Factor", min=1, max=1000, step=1, initial_value=10
+            "Downsample Factor", min=1, max=1000, step=1, initial_value=self.downsample_factor
         )
         self.show_camera_checkbox = self.server.gui.add_checkbox(
             "Show Camera", initial_value=self.show_camera
         )
         self.vis_threshold_slider = self.server.gui.add_slider(
-            "Visibility Threshold", min=1.0, max=5.0, step=0.01,
+            "Visibility Threshold", min=0.0, max=5.0, step=0.01,
             initial_value=self.vis_threshold,
         )
         self.camera_downsample_slider = self.server.gui.add_slider(
@@ -583,6 +585,8 @@ class PointCloudViewer:
         self.pc_handles.clear()
         self.vis_pts_list.clear()
 
+        total_points = 0
+        nonempty_frames = 0
         for i, step in enumerate(self.all_steps):
             pc = self.pcs[step]["pc"]
             color = self.pcs[step]["color"]
@@ -595,6 +599,9 @@ class PointCloudViewer:
             )
 
             self.vis_pts_list.append(pred_pts)
+            total_points += len(pred_pts)
+            if len(pred_pts) > 0:
+                nonempty_frames += 1
             handle = self.server.scene.add_point_cloud(
                 name=f"/frames/{step}/pred_pts",
                 points=pred_pts,
@@ -602,6 +609,13 @@ class PointCloudViewer:
                 point_size=self.psize_slider.value,
             )
             self.pc_handles.append(handle)
+
+        print(
+            f"Point cloud regenerated: {total_points} visible points "
+            f"across {nonempty_frames}/{len(self.all_steps)} frames "
+            f"(threshold={self.vis_threshold:.2f}, downsample={self.downsample_slider.value}, "
+            f"point_size={self.psize_slider.value})"
+        )
 
     def _regenerate_cameras(self):
         """Regenerate camera visualizations with current settings."""
@@ -1214,16 +1228,29 @@ class PointCloudViewer:
 
         self.server.scene.add_frame("/frames", show_axes=False)
         self.frame_nodes = []
+        total_points = 0
+        nonempty_frames = 0
         for i in range(self.num_frames):
             step = self.all_steps[i]
             self.frame_nodes.append(
                 self.server.scene.add_frame(f"/frames/{step}", show_axes=False)
             )
             self.add_pc(step)
+            frame_points = len(self.vis_pts_list[-1]) if self.vis_pts_list else 0
+            total_points += frame_points
+            if frame_points > 0:
+                nonempty_frames += 1
             if self.show_camera:
                 downsample_factor = int(self.camera_downsample_slider.value)
                 if i % downsample_factor == 0:
                     self.add_camera(step)
+
+        print(
+            f"Point cloud initialized: {total_points} visible points "
+            f"across {nonempty_frames}/{self.num_frames} frames "
+            f"(threshold={self.vis_threshold:.2f}, downsample={self.downsample_slider.value}, "
+            f"point_size={self.psize_slider.value})"
+        )
 
         prev_timestep = self.gui_timestep.value
         while True:
