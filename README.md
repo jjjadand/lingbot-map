@@ -64,13 +64,19 @@ LingBot-Map has focused on:
   - [Jetson (JetPack 6) Configuration](#jetson-jetpack-6-configuration)
   - [Key Arguments](#key-arguments)
   - [Viewer Controls](#viewer-controls)
+- [🔧 Real-Time V2 — Best Rendering + All Features (`demo_realtimeV2.py`)](#--real-time-v2--best-rendering--all-features-demo_realtimev2py)
+  - [How It Works](#how-it-works-1)
+  - [Basic Usage](#basic-usage-2)
+  - [Advanced Features](#advanced-features)
+  - [Key Arguments](#key-arguments-2)
+  - [Jetson (JetPack 6) Configuration](#jetson-jetpack-6-configuration-1)
 - [🔧 Real-Time V — Depth Unprojection (`demo_realtimeV.py`)](#--real-time-v--depth-unprojection-demo_realtimevpy)
   - [How It Works](#how-it-works)
   - [Basic Usage](#basic-usage-1)
   - [Recommended Settings](#recommended-settings)
   - [Key Arguments](#key-arguments-1)
   - [Stopping & Export](#stopping--export)
-  - [Jetson (JetPack 6) Configuration](#jetson-jetpack-6-configuration-1)
+  - [Jetson (JetPack 6) Config (Legacy V)](#jetson-jetpack-6-config-legacy-v)
 - [🎥 Offline Rendering Pipeline (`demo_render/batch_demo.py`)](#-offline-rendering-pipeline-demo_renderbatch_demopy)
 - [📜 License](#-license)
 - [📖 Citation](#-citation)
@@ -541,7 +547,124 @@ The web viewer provides real-time controls:
 - **Auto-Center View** — re-center the 3D scene
 - **Reset View** — reset camera to default position
 
-## 🔧 Real-Time V — Depth Unprojection (`demo_realtimeV.py`)
+## 🔧 Real-Time V2 — Best Rendering + All Features (`demo_realtimeV2.py`)
+
+`demo_realtimeV2.py` merges the superior rendering of `demo_realtimeV.py` (depth unprojection via official demo.py math) with all advanced features from `demo_realtime.py`. This is the **recommended real-time demo** for most use cases.
+
+### How It Works
+
+```
+RGB frame → LingBot-MAP → depth map + pose encoding
+                                       ↓
+depth map + camera intrinsics/extrinsics → depth unprojection → world coords
+                                       ↓
+                             3D point cloud (world space) → merged → viewer
+```
+
+### Basic Usage
+
+```bash
+python demo_realtimeV2.py \
+    --model_path lingbot-map.pt \
+    --video_device /dev/video0
+```
+
+Open `http://localhost:8080` in your browser.
+
+### Advanced Features
+
+**Loop Detection** — auto-detect when the camera returns to a visited position and stop:
+
+```bash
+python demo_realtimeV2.py \
+    --model_path lingbot-map.pt \
+    --video_device /dev/video0 \
+    --enable_loop_detection \
+    --loop_threshold 0.5
+```
+
+**Sky Mask** — filter out sky pixels using depth threshold:
+
+```bash
+python demo_realtimeV2.py \
+    --model_path lingbot-map.pt \
+    --video_device /dev/video0 \
+    --mask_sky \
+    --sky_threshold 50.0
+```
+
+**Video File Input** — run on a recorded video instead of live camera:
+
+```bash
+python demo_realtimeV2.py \
+    --model_path lingbot-map.pt \
+    --video_file /path/to/video.mp4 \
+    --loop_video
+```
+
+**Keyframe Gating** — only show frames with significant camera motion:
+
+```bash
+python demo_realtimeV2.py \
+    --model_path lingbot-map.pt \
+    --video_device /dev/video0 \
+    --enable_keyframe_gate \
+    --keyframe_trans_thresh 0.0025 \
+    --keyframe_rot_thresh_deg 6.0
+```
+
+**MP4 Export** (requires open3d):
+
+```bash
+python demo_realtimeV2.py \
+    --model_path lingbot-map.pt \
+    --video_device /dev/video0 \
+    --export_video
+```
+
+### Key Arguments
+
+| Argument | Default | Description |
+|:---|:---|:---|
+| `--video_file` | `None` | Run on a video file instead of camera |
+| `--enable_loop_detection` | `False` | Auto-stop on loop closure |
+| `--loop_threshold` | `0.5` | Distance threshold for loop detection (meters) |
+| `--mask_sky` | `False` | Filter sky pixels using depth threshold |
+| `--sky_threshold` | `50.0` | Depth above this (meters) treated as sky |
+| `--enable_keyframe_gate` | `False` | Only show frames with significant camera motion |
+| `--keyframe_trans_thresh` | `0.0025` | Min translation delta for accepting frame |
+| `--keyframe_rot_thresh_deg` | `6.0` | Min rotation delta for accepting frame |
+| `--image_size` | `518` | Model input size (must match checkpoint) |
+| `--num_scale_frames` | `8` | Frames for scale estimation |
+| `--camera_num_iterations` | `2` | Camera head iterations |
+| `--conf_threshold` | `1.5` | Absolute confidence threshold |
+| `--downsample_factor` | `10` | Spatial downsampling for viewer |
+| `--max_viewer_frames` | `300` | Max accumulated frames in viewer |
+| `--max_frames` | `None` | Auto-stop after N frames |
+| `--kv_reset_interval` | `200` | Reset KV cache every N frames |
+| `--export_glb` | `False` | Export GLB point cloud |
+| `--export_npz` | `False` | Export NPZ with raw predictions |
+| `--export_video` | `False` | Export MP4 flythrough (requires open3d) |
+
+### Jetson (JetPack 6) Configuration
+
+```bash
+python demo_realtimeV2.py \
+    --model_path lingbot-map.pt \
+    --video_device /dev/video0 \
+    --use_gstreamer \
+    --image_width 640 \
+    --image_height 384 \
+    --fps 20 \
+    --num_scale_frames 4 \
+    --camera_num_iterations 2 \
+    --enable_loop_detection \
+    --loop_threshold 0.5
+```
+
+## 🔧 Real-Time V — Legacy (`demo_realtimeV.py`)
+
+`demo_realtimeV.py` is the original depth-unprojection demo. For the best rendering **plus** all advanced features, use [`demo_realtimeV2.py`](#--real-time-v2--best-rendering--all-features-demo_realtimev2py) instead.
 
 `demo_realtimeV.py` is an alternative real-time demo that computes 3D world coordinates from the predicted depth maps via geometric unprojection, then sends a single merged point cloud to the viewer. It shares the same camera-capture and WebSocket viewer infrastructure as `demo_realtime.py`.
 
@@ -610,7 +733,7 @@ Export lands in `realtimeV_<reason>/`:
 - `scene.glb` — 3D point cloud + camera trajectory
 - `reconstruction.npz` — raw points, colors, and camera poses
 
-### Jetson (JetPack 6) Configuration
+### Jetson (JetPack 6) Config (Legacy V)
 
 ```bash
 python demo_realtimeV.py \
