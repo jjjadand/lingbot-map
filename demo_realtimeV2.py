@@ -1205,9 +1205,9 @@ def run(args):
 
             # ---- Color from original camera frame ----
             H, W = depth_np.shape if depth_np is not None else (canvas_h, canvas_w)
-            col_bgr = cv2.resize(frame_rgb.astype(np.float32) / 255.0, (W, H))
-            col_rgb = col_bgr[:, :, ::-1]
-            color_np = col_rgb.reshape(-1, 3).astype(np.float32)
+            # frame_rgb is already RGB from cv2.cvtColor(frame, COLOR_BGR2RGB)
+            # Just resize to match depth dimensions (no BGR→RGB needed)
+            color_np = cv2.resize(frame_rgb.astype(np.float32) / 255.0, (W, H)).reshape(-1, 3).astype(np.float32)
 
             # ---- Assemble frame data ----
             if world_pts is not None:
