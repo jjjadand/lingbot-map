@@ -49,6 +49,19 @@ LingBot-Map has focused on:
   - [Sky Masking](#sky-masking)
   - [Visualization Options](#visualization-options)
   - [Performance & Memory](#performance--memory)
+- [??? Real-Time 3D Reconstruction (`demo_realtime.py`)](#-real-time-3d-reconstruction-demo_realtimepy)
+  - [Basic Usage](#basic-usage)
+  - [LAN / Remote Viewing](#lan--remote-viewing)
+  - [Jetson (JetPack 6) Configuration](#jetson-jetpack-6-configuration)
+  - [Key Arguments](#key-arguments)
+  - [Viewer Controls](#viewer-controls)
+- [🔧 Real-Time V — Depth Unprojection (`demo_realtimeV.py`)](#--real-time-v--depth-unprojection-demo_realtimevpy)
+  - [How It Works](#how-it-works)
+  - [Basic Usage](#basic-usage-1)
+  - [Recommended Settings](#recommended-settings)
+  - [Key Arguments](#key-arguments-1)
+  - [Stopping & Export](#stopping--export)
+  - [Jetson (JetPack 6) Configuration](#jetson-jetpack-6-configuration-1)
 - [🎥 Offline Rendering Pipeline (`demo_render/batch_demo.py`)](#-offline-rendering-pipeline-demo_renderbatch_demopy)
 - [📜 License](#-license)
 - [📖 Citation](#-citation)
@@ -311,6 +324,241 @@ python demo.py --model_path /path/to/checkpoint.pt \
 ```
 
 `--camera_num_iterations` defaults to `4`; setting it to `1` skips three refinement passes in the camera head (and shrinks its KV cache by 4×).
+`--camera_num_iterations` defaults to `2`; setting it to `1` is faster but can noticeably hurt pose stability. Use `4` when quality matters more than speed.
+
+## ??? Real-Time 3D Reconstruction (`demo_realtime.py`)
+
+Live streaming 3D reconstruction from a UVC camera (`/dev/video*`) with a real-time web viewer. Optimized for NVIDIA Jetson (JetPack 6) with hardware-accelerated GStreamer capture and configurable frontend IP for LAN access.
+
+### Basic Usage
+
+```bash
+# From UVC camera (e.g. /dev/video0) — view locally
+python demo_realtime.py \
+    --model_path /path/to/checkpoint.pt \
+    --video_device /dev/video0
+```
+
+Open `http://localhost:8080` in your browser to view the 3D reconstruction in real time.
+
+### LAN / Remote Viewing
+
+Bind the viewer to your machine's LAN IP so another device on the same network can view:
+
+```bash
+python demo_realtime.py \
+    --model_path /path/to/checkpoint.pt \
+    --video_device /dev/video0 \
+    --server_ip 192.168.1.100 \
+    --port 8080
+```
+
+The script prints the viewer URL(s) on startup. Any browser on the LAN can open it.
+
+### Jetson (JetPack 6) Configuration
+
+Jetson platforms benefit from hardware-accelerated GStreamer pipelines and reduced resolution for higher FPS:
+
+```bash
+# Recommended Jetson settings (Orin NX / AGX)
+python demo_realtime.py \
+    --model_path /path/to/checkpoint.pt \
+    --video_device /dev/video0 \
+    --use_gstreamer \
+    --image_width 518 \
+    --image_height 378 \
+    --fps 20 \
+    --num_scale_frames 4 \
+    --camera_num_iterations 2
+```
+
+```bash
+# Aggressive Jetson Nano / NX settings
+python demo_realtime.py \
+    --model_path /path/to/checkpoint.pt \
+    --video_device /dev/video0 \
+    --use_gstreamer \
+    --image_width 518 \
+    --image_height 378 \
+    --fps 15 \
+    --num_scale_frames 2 \
+    --camera_num_iterations 2 \
+    --downsample_factor 16
+```
+
+The script auto-detects Jetson and uses GStreamer by default. On Jetson, `NV12` pixel format enables hardware-accelerated capture without CPU JPEG decode:
+
+```bash
+python demo_realtime.py \
+    --model_path /path/to/checkpoint.pt \
+    --video_device /dev/video0 \
+    --pixel_format NV12 \
+    --use_gstreamer \
+    --image_width 640 \
+    --image_height 384 \
+    --fps 30
+```
+
+### Key Arguments
+
+| Argument | Default | Description |
+|:---|:---|:---|
+| `--video_device` | `/dev/video0` | V4L2 device path |
+| `--image_width` | `640` | Camera capture width |
+| `--image_height` | `384` | Camera capture height |
+| `--fps` | `20` | Camera framerate |
+| `--use_gstreamer` | `False` | Use GStreamer pipeline (auto-on Jetson) |
+| `--pixel_format` | `MJPG` | `MJPG` (high res/fps), `YUYV` (compressed), `NV12` (Jetson HW) |
+| `--server_ip` | `0.0.0.0` | Viewer bind IP — set to LAN IP for remote viewing |
+| `--port` | `8080` | Viewer port |
+| `--render_mode` | `viser` | `viser` = browser WebGL (interactive), `stream` = server Open3D + JPEG video (lower latency) |
+| `--num_scale_frames` | `4` | Scale estimation frames (fewer = faster startup) |
+| `--camera_num_iterations` | `2` | Camera head iterations (1 = faster, 4 = better accuracy) |
+| `--capture_fps` | `same as --fps` | Inference throttling (capture rate cap) |
+| `--max_viewer_frames` | `300` | Max frames kept in viewer history |
+| `--max_frames` | `None` | Auto-stop after N frames and export scene |
+| `--enable_loop_detection` | `False` | Auto-detect loop closure and stop |
+| `--loop_threshold` | `0.5` | Loop detection distance threshold (scene units) |
+| `--loop_min_history` | `30` | Min frames before enabling loop detection |
+| `--export_glb` | `True` | Export GLB point cloud after stop |
+| `--export_npz` | `True` | Export NPZ raw predictions after stop |
+| `--export_video` | `False` | Export MP4 flythrough after stop (requires open3d) |
+
+### Stopping Mechanisms
+
+Four ways to stop reconstruction and export the scene:
+
+1. **Ctrl+C** — manual stop, exports on exit
+2. **GUI button** — click "Stop & Export Scene" in the viewer to stop and export immediately
+3. **Auto-stop by frame count** — `--max_frames N` stops after N frames
+4. **Loop detection** — `--enable_loop_detection` monitors camera position; when the camera returns near a previously visited location (within `--loop_threshold` distance), reconstruction stops automatically
+
+On stop, the scene is exported to `--output_dir` (default: `realtime_output_<reason>/`) containing:
+- `scene.glb` — 3D point cloud with camera trajectory (for MeshLab, Blender, etc.)
+- `predictions.npz` — raw predictions (depth, poses, intrinsics, images) for reprocessing
+- `reconstruction.mp4` — rendered flythrough video (if `--export_video`)
+
+### Rendering Modes
+
+**`--render_mode viser`** (default) — 浏览器端 WebGL 渲染
+
+点云数据通过 WebSocket 实时推送，浏览器用 Three.js/WebGL 直接渲染 3D 点云。
+- 支持鼠标交互（旋转、缩放、平移）
+- 支持相机位姿可视化
+- 缺点：网络传输量大（每帧推送数百万个 3D 点坐标），延迟约 50-200ms
+
+**`--render_mode stream`** — 服务端 Open3D 渲染 + 浏览器显示 JPEG 视频流
+
+Open3D 在服务端渲染点云，每帧输出 JPEG 压缩的视频流，浏览器只负责显示。
+- 极低网络带宽需求（MJPEG 视频流）
+- 支持 EDL（Eye-Dome Lighting）深度增强
+- 延迟可降到 20-50ms
+- 适合 Jetson 算力有限或网络带宽受限的场景
+- 需要安装 `open3d` 和 `aiohttp`
+
+```bash
+# stream 模式示例（Jetson 推荐）
+python demo_realtime.py \
+    --model_path lingbot-map.pt \
+    --video_device /dev/video0 \
+    --render_mode stream \
+    --server_ip 192.168.1.100 \
+    --jpeg_quality 75 \
+    --render_width 1280 --render_height 720
+```
+
+### Viewer Controls
+
+The web viewer provides real-time controls:
+- **Confidence Threshold** — filter low-confidence 3D points
+- **Downsample Factor** — reduce point cloud density for smoother rendering
+- **Point Size** — adjust 3D point size
+- **Show Cameras** — toggle camera frustum and trajectory visualization
+- **Auto-Center View** — re-center the 3D scene
+- **Reset View** — reset camera to default position
+
+## 🔧 Real-Time V — Depth Unprojection (`demo_realtimeV.py`)
+
+`demo_realtimeV.py` is an alternative real-time demo that computes 3D world coordinates from the predicted depth maps via geometric unprojection, then sends a single merged point cloud to the viewer. It shares the same camera-capture and WebSocket viewer infrastructure as `demo_realtime.py`.
+
+### How It Works
+
+```
+RGB frame → LingBot-MAP → depth map + pose encoding
+                                        ↓
+depth map + camera intrinsics/extrinsics → depth unprojection → world coords
+                                        ↓
+                              3D point cloud (world space) → merged → viewer
+```
+
+1. **Depth unprojection**: uses `depth_to_cam_coords_points` + `closed_form_inverse_se3` — the same math as the official `PointCloudViewer`
+2. **Camera pose**: pose encoding → extrinsic/intrinsic via `pose_encoding_to_extri_intri` → c2w via SE3 inversion
+3. **Color**: pixel-aligned RGB from the original camera frame
+4. **Scene centering**: viewer re-centers the point cloud on the mean of all camera positions
+5. **Export**: points centered on the first camera, with OpenGL orientation (matching `glb_export`)
+
+### Basic Usage
+
+```bash
+python demo_realtimeV.py \
+    --model_path lingbot-map.pt \
+    --video_device /dev/video0
+```
+
+Open `http://localhost:8080` in your browser.
+
+### Recommended Settings
+
+```bash
+python demo_realtimeV.py \
+    --model_path lingbot-map.pt \
+    --video_device /dev/video0 \
+    --image_size 518 \
+    --num_scale_frames 8 \
+    --camera_num_iterations 4 \
+    --conf_threshold 2.0 \
+    --port 8080
+```
+
+> **Important:** `--image_size` must match the size the model was trained with (default: `518`). Using a different size causes a `size mismatch` error at load time.
+
+### Key Arguments
+
+| Argument | Default | Description |
+|:---|:---|:---|
+| `--image_size` | `518` | Model input size (must match checkpoint) |
+| `--num_scale_frames` | `8` | Frames for scale estimation; fewer = faster startup |
+| `--camera_num_iterations` | `2` | Camera head iterations; 1 = faster, 4 = better accuracy |
+| `--conf_threshold` | `1.5` | Absolute confidence threshold for filtering points |
+| `--downsample_factor` | `10` | Spatial downsampling for viewer rendering |
+| `--max_viewer_frames` | `300` | Max accumulated frames kept in viewer history |
+| `--max_frames` | `None` | Auto-stop after N frames and export scene |
+| `--kv_reset_interval` | `200` | Reset KV cache every N frames |
+| `--capture_fps` | `same as --fps` | Throttle capture rate (cap inference speed) |
+
+### Stopping & Export
+
+- **Ctrl+C** — manual stop, exports scene on exit
+- **GUI button** — click "Stop & Export" in the viewer
+- **Auto-stop** — `--max_frames N` stops after N frames
+
+Export lands in `realtimeV_<reason>/`:
+- `scene.glb` — 3D point cloud + camera trajectory
+- `reconstruction.npz` — raw points, colors, and camera poses
+
+### Jetson (JetPack 6) Configuration
+
+```bash
+python demo_realtimeV.py \
+    --model_path lingbot-map.pt \
+    --video_device /dev/video0 \
+    --use_gstreamer \
+    --image_width 518 \
+    --image_height 378 \
+    --fps 20 \
+    --num_scale_frames 4 \
+    --camera_num_iterations 2
+```
 
 ## 🎥 Offline Rendering Pipeline (`demo_render/batch_demo.py`)
 

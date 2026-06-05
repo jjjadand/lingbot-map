@@ -120,8 +120,10 @@ def pose_encoding_to_extri_intri(
 
         if build_intrinsics:
             H, W = image_size_hw
-            fy = (H / 2.0) / torch.tan(fov_h / 2.0)
-            fx = (W / 2.0) / torch.tan(fov_w / 2.0)
+            # Add a small epsilon to avoid tan(0) singularities.
+            eps = 1e-6
+            fy = (H / 2.0) / torch.tan(fov_h / 2.0 + eps)
+            fx = (W / 2.0) / torch.tan(fov_w / 2.0 + eps)
             intrinsics = torch.zeros(pose_encoding.shape[:2] + (3, 3), device=pose_encoding.device)
             intrinsics[..., 0, 0] = fx
             intrinsics[..., 1, 1] = fy

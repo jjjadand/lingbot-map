@@ -12,3 +12,12 @@ CLAUDE.md
 .agents/
 skyseg.onnx
 lingbot-map.pt
+*.bak.*
+.cache/
+.venv/
+.wheels/
+offline_assets_rendered/
+offline_assets_run/
+realtime_output_*/
+1.txt
+.flashinfer/

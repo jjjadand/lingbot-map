@@ -44,12 +44,16 @@ from typing import List
 
 import torch
 from torch import Tensor
+from lingbot_map.utils.flashinfer_import import import_flashinfer
 
 try:
-    import flashinfer
+    _flashinfer_module = import_flashinfer()
+    _flashinfer_prefill = _flashinfer_module.prefill
     FLASHINFER_AVAILABLE = True
 except ImportError:
     FLASHINFER_AVAILABLE = False
+    _flashinfer_prefill = None
+    _flashinfer_module = None
 
 
 class FlashInferKVCacheManager:
@@ -184,7 +188,7 @@ class FlashInferKVCacheManager:
         self.workspace_buffer = torch.zeros(
             128 * 1024 * 1024, dtype=torch.uint8, device=device
         )
-        self.prefill_wrapper = flashinfer.BatchPrefillWithPagedKVCacheWrapper(
+        self.prefill_wrapper = _flashinfer_prefill.BatchPrefillWithPagedKVCacheWrapper(
             self.workspace_buffer,
             kv_layout="NHD",
             backend=_fi_backend,

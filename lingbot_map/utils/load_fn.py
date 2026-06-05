@@ -38,7 +38,6 @@ def load_and_preprocess_images_square(image_path_list, target_size=1024):
     images = []
     original_coords = []  # Renamed from position_info to be more descriptive
     to_tensor = TF.ToTensor()
-
     for image_path in image_path_list:
         # Open image
         img = Image.open(image_path)
@@ -140,7 +139,6 @@ def load_and_preprocess_images(image_path_list, fx=None, fy=None, cx=None, cy=No
 
     target_size = image_size
     to_tensor = TF.ToTensor()
-
     def _load_one(idx_path):
         i, image_path = idx_path
         img = Image.open(image_path)

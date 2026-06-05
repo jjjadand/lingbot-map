@@ -38,6 +38,9 @@ import time
 # the default allocator run.
 if "--compile" not in sys.argv:
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+_repo_root = os.path.dirname(os.path.abspath(__file__))
+os.environ.setdefault("FLASHINFER_WORKSPACE_BASE", os.path.join(_repo_root, ".cache"))
+os.environ.setdefault("TORCH_EXTENSIONS_DIR", os.path.join(_repo_root, ".cache", "torch_extensions"))
 
 import cv2
 import numpy as np
@@ -389,9 +392,9 @@ def main():
             "scale_frames + (window_size - scale_frames) * keyframe_interval.",
     )
     parser.add_argument("--kv_cache_sliding_window", type=int, default=64)
-    parser.add_argument("--camera_num_iterations", type=int, default=4,
-                        help="Camera head iterative-refinement steps. Default 4; set 1 for faster inference "
-                            "(skips 3 refinement passes at a small accuracy cost).")
+    parser.add_argument("--camera_num_iterations", type=int, default=2,
+                        help="Camera head iterative-refinement steps. Default 2; set 1 for faster inference "
+                            "(skips refinement passes at a small accuracy cost).")
     parser.add_argument("--use_sdpa", action="store_true", default=False,
                         help="Use SDPA backend (no flashinfer needed). Default: FlashInfer")
     parser.add_argument("--compile", action="store_true", default=False,

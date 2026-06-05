@@ -93,7 +93,7 @@ class GCTStream(GCTBase):
         disable_global_rope: bool = False,
         # Head configuration
         enable_camera: bool = True,
-        enable_point: bool = False,
+        enable_point: bool = True,
         enable_local_point: bool = False,
         enable_depth: bool = True,
         enable_track: bool = False,

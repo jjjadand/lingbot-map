@@ -18,16 +18,25 @@ from torch import nn
 import torch.nn.functional as F
 
 from lingbot_map.layers.rope import apply_rotary_emb
+from lingbot_map.utils.flashinfer_import import import_flashinfer
 
 from einops import rearrange
 
-# FlashInfer imports (optional - for paged attention)
-try:
-    import flashinfer
-    FLASHINFER_AVAILABLE = True
-except ImportError:
-    FLASHINFER_AVAILABLE = False
-    print("flashinfer not available")
+flashinfer = None
+FLASHINFER_AVAILABLE = None
+
+
+def _get_flashinfer():
+    """Import FlashInfer lazily so SDPA-only runs don't fail at module import time."""
+    global flashinfer, FLASHINFER_AVAILABLE
+    if FLASHINFER_AVAILABLE is None:
+        try:
+            flashinfer = import_flashinfer()
+            FLASHINFER_AVAILABLE = True
+        except ImportError:
+            FLASHINFER_AVAILABLE = False
+            flashinfer = None
+    return flashinfer
 
 from typing_extensions import List
 from typing import Optional, Tuple
@@ -318,13 +327,13 @@ class CausalAttention(nn.Module):
                     if self.kv_cache_cross_frame_special:
                         if self.kv_cache_camera_only:
                             # Only keep camera token
-                            new_special_k = evicted_k[:, :, :, camera_token_idx:camera_token_idx+1, :].clone()
-                            new_special_v = evicted_v[:, :, :, camera_token_idx:camera_token_idx+1, :].clone()
+                            new_special_k = evicted_k[:, :, :, camera_token_idx:camera_token_idx+1, :]
+                            new_special_v = evicted_v[:, :, :, camera_token_idx:camera_token_idx+1, :]
                         else:
                             # Keep ALL special tokens (camera + register + scale) to match attention_mask behavior
                             # Special tokens are in range [camera_token_idx, scale_token_idx+1)
-                            new_special_k = evicted_k[:, :, :, camera_token_idx:scale_token_idx+1, :].clone()
-                            new_special_v = evicted_v[:, :, :, camera_token_idx:scale_token_idx+1, :].clone()
+                            new_special_k = evicted_k[:, :, :, camera_token_idx:scale_token_idx+1, :]
+                            new_special_v = evicted_v[:, :, :, camera_token_idx:scale_token_idx+1, :]
 
                         if f"k_{global_idx}_special" not in kv_cache or kv_cache[f"k_{global_idx}_special"] is None:
                             kv_cache[f"k_{global_idx}_special"] = new_special_k
@@ -376,7 +385,7 @@ class FlashInferAttention(Attention):
         kv_cache_include_scale_frames: bool = True,
         kv_cache_camera_only: bool = False,
     ) -> None:
-        if not FLASHINFER_AVAILABLE:
+        if _get_flashinfer() is None:
             raise RuntimeError("FlashInfer is not available. Please install flashinfer.")
 
         super().__init__(
@@ -689,11 +698,11 @@ class SDPAAttention(Attention):
 
                     if self.kv_cache_cross_frame_special:
                         if self.kv_cache_camera_only:
-                            new_special_k = evicted_k[:, :, :, camera_token_idx:camera_token_idx+1, :].clone()
-                            new_special_v = evicted_v[:, :, :, camera_token_idx:camera_token_idx+1, :].clone()
+                            new_special_k = evicted_k[:, :, :, camera_token_idx:camera_token_idx+1, :]
+                            new_special_v = evicted_v[:, :, :, camera_token_idx:camera_token_idx+1, :]
                         else:
-                            new_special_k = evicted_k[:, :, :, camera_token_idx:scale_token_idx+1, :].clone()
-                            new_special_v = evicted_v[:, :, :, camera_token_idx:scale_token_idx+1, :].clone()
+                            new_special_k = evicted_k[:, :, :, camera_token_idx:scale_token_idx+1, :]
+                            new_special_v = evicted_v[:, :, :, camera_token_idx:scale_token_idx+1, :]
 
                         if f"k_{global_idx}_special" not in kv_cache or kv_cache[f"k_{global_idx}_special"] is None:
                             kv_cache[f"k_{global_idx}_special"] = new_special_k
