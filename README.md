@@ -22,6 +22,14 @@ https://github.com/user-attachments/assets/fe39e095-af2c-4ec9-b68d-a8ba97e505ab
 
 -----
 
+### This Branch: Jetson (JetPack 6) Optimized
+
+This fork adds real-time UVC camera streaming, GStreamer hardware-accelerated capture, and pre-packaged offline install wheels for **NVIDIA Jetson (JetPack 6)** targets. The official `main` branch targets standard x86_64 Linux with CUDA.
+
+**Jetson users: see [Quick Deploy (Jetson)](#-quick-deploy-jetson) below for a one-command offline install path.** Full installation notes are in [INSTALL_JETSON.md](INSTALL_JETSON.md).
+
+-----
+
 ### 🗺️ Meet LingBot-Map! We've built a feed-forward 3D foundation model for streaming 3D reconstruction! 🏗️🌍
 
 LingBot-Map has focused on:
@@ -42,6 +50,7 @@ LingBot-Map has focused on:
 - [⚙️ Installation](#️-installation)
 - [📦 Model Download](#-model-download)
 - [🚀 Quick Start](#-quick-start)
+- [🚀 Quick Deploy (Jetson)](#-quick-deploy-jetson)
 - [🎬 Interactive Demo (`demo.py`)](#-interactive-demo-demopy)
   - [Try the Example Scenes](#try-the-example-scenes)
   - [Streaming with Keyframe Interval](#streaming-with-keyframe-interval)
@@ -152,6 +161,59 @@ python demo.py --model_path /path/to/lingbot-map-long.pt \
 ```
 
 This launches an interactive [viser](https://github.com/nerfstudio-project/viser) viewer at `http://localhost:8080`. See [Interactive Demo](#-interactive-demo-demopy) below for the full set of scenes and flags, or jump to [Offline Rendering Pipeline](#-offline-rendering-pipeline-demo_renderbatch_demopy) for long-sequence batch rendering.
+
+## 🚀 Quick Deploy (Jetson)
+
+Offline install path for **NVIDIA Jetson (JetPack 6)** targets with no internet access required.
+
+**Pre-requisites:** JetPack 6.2+, Python 3.10, JetPack CUDA/cuDNN already installed.
+
+**Step 1 — Copy offline wheel files to the Jetson device:**
+
+Copy these two files from the repo to the Jetson device:
+
+- `tutorial_wheels/torch_tutorial.whl`
+- `tutorial_wheels/torchvision_tutorial.whl`
+
+**Step 2 — Create environment and install wheels:**
+
+```bash
+cd /path/to/lingbot-map
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install pre-downloaded GPU wheels (bypasses network)
+pip install \
+  ./tutorial_wheels/torch_tutorial.whl \
+  ./tutorial_wheels/torchvision_tutorial.whl
+
+# Fix numpy/opencv compat (numpy 2.x breaks Jetson PyTorch bridge)
+pip install "numpy==1.26.4" "opencv-python==4.10.0.84"
+
+# Install project + viewer deps
+pip install -e .
+pip install "viser>=0.2.23" aiohttp onnxruntime trimesh matplotlib requests
+
+# FlashInfer (optional, recommended for ~20 FPS on Orin)
+pip install --index-url https://pypi.org/simple flashinfer-python
+```
+
+**Step 3 — Download model and run:**
+
+```bash
+# Download model (one-time, needs internet or pre-staged)
+# From HuggingFace: https://huggingface.co/robbyant/lingbot-map
+# Place as: ./lingbot-map.pt
+
+# Test
+python demo_realtimeV.py \
+    --model_path ./lingbot-map.pt \
+    --video_device /dev/video0 \
+    --server_ip 0.0.0.0 \
+    --port 8080
+```
+
+For full installation notes, known failure modes, and GStreamer tuning, see [INSTALL_JETSON.md](INSTALL_JETSON.md).
 
 ## 🎬 Interactive Demo (`demo.py`)
 
