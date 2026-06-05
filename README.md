@@ -173,7 +173,7 @@ Offline install path for **NVIDIA Jetson (JetPack 6)** targets with no internet 
 Download the JetPack 6 GPU wheels from SharePoint:
 
 - **torch:** https://seeedstudio88-my.sharepoint.com/:u:/g/personal/youjiang_yu_seeedstudio88_onmicrosoft_com/IQBtpHvBD3FYRrDNpowjEDlhAXBLjgOOa8TZgtBZZAX4Tz4?e=YRsN2N
-- **torchvision:** https://seeedstudio88-my.sharepoint.com/:u:/g/personal/youjiang_yu_seeedstudio88_onmicrosoft_com/IQBtpHvBD3FYRrDNpowjEDlhAXBLjgOOa8TZgtBZZAX4Tz4?e=YRsN2N
+- **torchvision:** https://seeedstudio88-my.sharepoint.com/:u:/g/personal/youjiang_yu_seeedstudio88_onmicrosoft_com/IQB8mpvF9FN1TapoqNmQTOqLAdSAwLq4L5HeiQLCS52oU3A?e=2IZUAg
 
 Place the downloaded `.whl` files into `tutorial_wheels/` on the Jetson device (or any directory you prefer), then:
 
