@@ -168,12 +168,14 @@ Offline install path for **NVIDIA Jetson (JetPack 6)** targets with no internet 
 
 **Pre-requisites:** JetPack 6.2+, Python 3.10, JetPack CUDA/cuDNN already installed.
 
-**Step 1 — Copy offline wheel files to the Jetson device:**
+**Step 1 — Download and copy offline wheel files to the Jetson device:**
 
-Copy these two files from the repo to the Jetson device:
+Download the JetPack 6 GPU wheels from SharePoint:
 
-- `tutorial_wheels/torch_tutorial.whl`
-- `tutorial_wheels/torchvision_tutorial.whl`
+- **torch:** https://seeedstudio88-my.sharepoint.com/:u:/g/personal/youjiang_yu_seeedstudio88_onmicrosoft_com/IQBtpHvBD3FYRrDNpowjEDlhAXBLjgOOa8TZgtBZZAX4Tz4?e=YRsN2N
+- **torchvision:** https://seeedstudio88-my.sharepoint.com/:u:/g/personal/youjiang_yu_seeedstudio88_onmicrosoft_com/IQBtpHvBD3FYRrDNpowjEDlhAXBLjgOOa8TZgtBZZAX4Tz4?e=YRsN2N
+
+Place the downloaded `.whl` files into `tutorial_wheels/` on the Jetson device (or any directory you prefer), then:
 
 **Step 2 — Create environment and install wheels:**
 
