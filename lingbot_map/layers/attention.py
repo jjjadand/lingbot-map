@@ -237,16 +237,36 @@ class CausalAttention(nn.Module):
             v_reshaped = v.view(B, self.num_heads, num_frame_per_block, N // num_frame_per_block, self.head_dim)
 
             if not skip_append:
-                # KEYFRAME: store in cache (original behavior)
+                # KEYFRAME: store in cache
                 if kv_cache[f"k_{global_idx}"] is None:
                     kv_cache[f"k_{global_idx}"] = k_reshaped
                     kv_cache[f"v_{global_idx}"] = v_reshaped
                 else:
-                    num_frame_per_block = k.shape[2] // kv_cache[f"k_{global_idx}"].shape[3]
-                    k_reshaped = k.view(B, self.num_heads, num_frame_per_block, N // num_frame_per_block, self.head_dim)
-                    v_reshaped = v.view(B, self.num_heads, num_frame_per_block, N // num_frame_per_block, self.head_dim)
-                    kv_cache[f"k_{global_idx}"] = torch.cat((kv_cache[f"k_{global_idx}"], k_reshaped), dim=2)
-                    kv_cache[f"v_{global_idx}"] = torch.cat((kv_cache[f"v_{global_idx}"], v_reshaped), dim=2)
+                    # The cached chunk size in dim 3 may differ from the
+                    # new chunk size (e.g. bootstrap used chunks of 8,
+                    # streaming uses chunks of 1). Reshape the new
+                    # chunk's dim 2*3 to match the cached dim 3.
+                    cached_chunk = kv_cache[f"k_{global_idx}"].shape[3]
+                    new_chunk = k_reshaped.shape[3]
+                    if new_chunk != cached_chunk:
+                        Bk, Hk, _, _, Dk = k_reshaped.shape
+                        new_total = int(k_reshaped.shape[2] * new_chunk)
+                        if new_total % cached_chunk == 0:
+                            num_new_blocks = new_total // cached_chunk
+                            k_reshaped = k_reshaped.reshape(
+                                Bk, Hk, num_new_blocks, cached_chunk, Dk
+                            )
+                            v_reshaped = v_reshaped.reshape(
+                                Bk, Hk, num_new_blocks, cached_chunk, Dk
+                            )
+                            num_frame_per_block = cached_chunk
+                    if k_reshaped.shape[3] == kv_cache[f"k_{global_idx}"].shape[3]:
+                        kv_cache[f"k_{global_idx}"] = torch.cat(
+                            (kv_cache[f"k_{global_idx}"], k_reshaped), dim=2
+                        )
+                        kv_cache[f"v_{global_idx}"] = torch.cat(
+                            (kv_cache[f"v_{global_idx}"], v_reshaped), dim=2
+                        )
 
                 # Apply sliding window eviction BEFORE attention to match causal_3drope behavior
                 # This ensures current frame only attends to frames within the sliding window
@@ -644,15 +664,32 @@ class SDPAAttention(Attention):
                 kv_cache[f"v_{global_idx}"] = v.view(B, self.num_heads, num_frame_per_block,
                                                      N // num_frame_per_block, self.head_dim)
             else:
-                num_frame_per_block = k.shape[2] // kv_cache[f"k_{global_idx}"].shape[3]
-                kv_cache[f"k_{global_idx}"] = torch.cat((
-                    kv_cache[f"k_{global_idx}"],
-                    k.view(B, self.num_heads, num_frame_per_block, N // num_frame_per_block, self.head_dim)
-                ), dim=2)
-                kv_cache[f"v_{global_idx}"] = torch.cat((
-                    kv_cache[f"v_{global_idx}"],
-                    v.view(B, self.num_heads, num_frame_per_block, N // num_frame_per_block, self.head_dim)
-                ), dim=2)
+                # The cached chunk size in dim 3 may differ from the new
+                # chunk size (e.g. bootstrap used chunks of 8, streaming
+                # uses chunks of 1). The view used for the cat must
+                # match the cached dim 3.
+                cached_chunk = kv_cache[f"k_{global_idx}"].shape[3]
+                new_chunk = num_frame_per_block
+                if new_chunk != cached_chunk:
+                    new_total = int(N)
+                    if new_total % cached_chunk == 0:
+                        num_frame_per_block = cached_chunk
+                    else:
+                        # Cannot align cleanly; keep the existing cache
+                        # untouched. The new frame's k/v will still
+                        # attend to all cached frames via the reshape
+                        # below, so attention itself is unaffected — we
+                        # just don't grow the cache for this frame.
+                        num_frame_per_block = -1
+                if num_frame_per_block > 0:
+                    kv_cache[f"k_{global_idx}"] = torch.cat((
+                        kv_cache[f"k_{global_idx}"],
+                        k.view(B, self.num_heads, num_frame_per_block, N // num_frame_per_block, self.head_dim)
+                    ), dim=2)
+                    kv_cache[f"v_{global_idx}"] = torch.cat((
+                        kv_cache[f"v_{global_idx}"],
+                        v.view(B, self.num_heads, num_frame_per_block, N // num_frame_per_block, self.head_dim)
+                    ), dim=2)
 
             self._apply_kv_cache_eviction(
                 kv_cache, global_idx, camera_token_idx, scale_token_idx, num_register_tokens

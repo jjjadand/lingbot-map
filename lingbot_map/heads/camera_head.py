@@ -289,10 +289,12 @@ class CameraCausalHead(nn.Module):
                     for j in range(self.trunk_depth):
                         self.kv_cache[i][f"k_{j}"] = None
                         self.kv_cache[i][f"v_{j}"] = None
-            # Camera head processes 1 frame at a time in streaming mode.
-            # The attention reshape (N // num_frame_per_block) fails when
-            # num_frame_per_block > num_frames, so force it to 1.
-            if tokens.shape[1] == 1:
+            # Bootstrap may receive fewer frames than num_frame_per_block
+            # if the input buffer underruns. In that case the attention
+            # view N // num_frame_per_block would be 0 — fall back to a
+            # per-frame (num_frame_per_block=1) view so the cat still
+            # works in attention.py.
+            if tokens.shape[1] < num_frame_per_block:
                 num_frame_per_block = 1
 
         pred_pose_enc_list = self.trunk_fn(pose_tokens, mask, num_iterations, num_frame_per_block=num_frame_per_block, num_frame_for_scale=num_frame_for_scale, sliding_window_size=effective_sliding_window_size)

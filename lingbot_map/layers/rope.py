@@ -336,30 +336,31 @@ class WanRotaryPosEmbed(nn.Module):
     def forward(self, ppf, pph, ppw, patch_start_idx, device: torch.device, f_start: int = 0, f_end: Optional[int] = None) -> torch.Tensor:
         """
         前向传播：为3D输入（视频帧+patch）生成旋转位置编码
-        
+
         参数：
         - ppf (int): 帧数（patches per frame），当f_end为None时使用
         - pph (int): 每帧的patch高度数量
-        - ppw (int): 每帧的patch宽度数量  
+        - ppw (int): 每帧的patch宽度数量
         - patch_start_idx (int): 每帧的特殊token数量（在patches之前）
         - device: 计算设备（CPU/GPU）
         - f_start (int): 起始帧索引（用于causal模式），默认为0
         - f_end (Optional[int]): 结束帧索引（用于causal模式），如果为None则使用ppf作为帧数
-        
+
         返回：
         - freqs: [1, 1, ppf * (patch_start_idx + pph * ppw), head_dim//2] 复数频率tensor
-        
+
         Token排列顺序：
         [frame0_special_token_0, ..., frame0_special_token_N,
          frame0_patch_0, ..., frame0_patch_M,
          frame1_special_token_0, ..., frame1_special_token_N,
          frame1_patch_0, ..., frame1_patch_M,
          ...]
-        
+
         模式：
         - 非causal模式：f_end=None，使用ppf作为帧数，从位置0开始
         - Causal模式：f_end不为None，使用[f_start, f_end)范围的帧，ppf会被重新计算
         """
+        _debug_fhw = torch.cuda.is_available()  # only print on GPU
 
         # 步骤1：将预计算的频率移到目标设备，并分割成三个维度
         self.freqs = self.freqs.to(device)
@@ -370,7 +371,11 @@ class WanRotaryPosEmbed(nn.Module):
             # 自动分配的情况
             h_dim = w_dim = 2 * (self.attention_head_dim // 6)
             t_dim = self.attention_head_dim - h_dim - w_dim
-        
+
+        if _debug_fhw:
+            # print once per forward pass
+            print(f"[RoPE3D] attention_head_dim={self.attention_head_dim}, fhw_dim=({t_dim},{h_dim},{w_dim}), sum={t_dim+h_dim+w_dim}")
+
         # 使用正确的split sizes（每个维度的一半）
         freqs = self.freqs.split_with_sizes(
             [
@@ -455,6 +460,12 @@ def apply_rotary_emb(x, freqs):
     x2 = x[..., 1::2]  # [B, H, N, D//2]
 
     # (x1 + i*x2) * (cos + i*sin) = (x1*cos - x2*sin) + i*(x1*sin + x2*cos)
+    if x1.shape[-1] != cos.shape[-1]:
+        raise RuntimeError(
+            f"[RoPE] Dimension mismatch: x1.shape[-1]={x1.shape[-1]} (head_dim//2={x.shape[-1]//2}), "
+            f"cos.shape[-1]={cos.shape[-1]} (freqs.last_dim={freqs.shape[-1]}). "
+            f"freqs shape: {freqs.shape}, x shape: {x.shape}"
+        )
     out1 = x1 * cos - x2 * sin
     out2 = x1 * sin + x2 * cos
 

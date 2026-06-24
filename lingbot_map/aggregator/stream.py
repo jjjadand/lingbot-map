@@ -256,12 +256,30 @@ class AggregatorStream(AggregatorBase):
         num_heads = 16
         head_dim = self.embed_dim // num_heads
 
+        # Use a large max_seq_len so the precomputed freqs table covers the full
+        # video (up to 20000 frames) without index-out-of-bounds in streaming mode.
+        # The freqs table is small (20000 x head_dim//2 float64 ≈ 2.5MB) so a large
+        # cap is harmless. f_start=total_frames_processed goes up to here safely.
+        rope_max_seq = max(self.max_frame_num, 20000)
+
         self.rope3d = WanRotaryPosEmbed(
             attention_head_dim=head_dim,
             patch_size=(1, self.patch_size, self.patch_size),
-            max_seq_len=self.max_frame_num,
+            max_seq_len=rope_max_seq,
         )
-        logger.info(f"3D RoPE initialized for max {self.max_frame_num} frames, head_dim={head_dim}")
+        logger.info(f"3D RoPE initialized: max_seq={rope_max_seq}, head_dim={head_dim}")
+
+    def reinit_rope_for_canvas(self, canvas_h: int, canvas_w: int):
+        """Clear cached 3D RoPE positions.
+
+        Call this after canvas size changes so the next forward pass
+        recomputes positions with the new dimensions.
+        """
+        if not self.enable_3d_rope:
+            return
+        if self._cached_pos3d is not None:
+            self._cached_pos3d = None
+            logger.info(f"3D RoPE cache cleared for canvas {canvas_w}x{canvas_h}")
 
     def _get_3d_positions_streaming(self, num_frames, H, W, device, f_start, f_end):
         """
@@ -292,6 +310,7 @@ class AggregatorStream(AggregatorBase):
             f_start=f_start,
             f_end=f_end
         )
+        print(f"[RoPE3D-stream] f_start={f_start}, f_end={f_end}, ppf={num_frames}, pph={pph}, ppw={ppw}, patch_start_idx={self.num_special_tokens} -> pos3d.shape={pos3d.shape}")
         return pos3d
 
     def _prepare_special_tokens(
